@@ -13,8 +13,8 @@
     {
       "binding": "DB",
       "database_name": "status",
-      // `wrangler d1 create status` prints the id; put it here before the first deploy.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Created with `wrangler d1 create status`.
+      "database_id": "1b4225d8-5451-4e7f-a44c-d740d4c170a6",
       "migrations_dir": "migrations"
     }
   ],
