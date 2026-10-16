@@ -47,7 +47,7 @@ npm run db:migrate:remote
 npx wrangler deploy             # або Workers Builds: підключити цей репо, тоді пуш у main деплоїть сам
 ```
 
-- **Access.** Додати до застосунку Access шляхи `status.rostyslav-mukha.dev/admin` і `status.rostyslav-mukha.dev/v1/admin`, а його AUD вписати в `ACCESS_AUD`.
+- **Access.** Створити окремий self-hosted застосунок Access (не спільний з каталогом, щоб токени одного не підходили до іншого) з публічними хостами `status.rostyslav-mukha.dev/admin` і `status.rostyslav-mukha.dev/v1/admin` та політикою Allow лише на пошту власника. Його AUD вписати в `ACCESS_AUD`.
 - **Telegram (необов'язково).** Виконати `npx wrangler secret put TELEGRAM_BOT_TOKEN` і вписати `TELEGRAM_CHAT_ID` у `vars`.
 - **Переїзд на новий домен.** Змінити `routes` і `TARGETS`. Старий сабдомен краще лишити другим маршрутом, поки селф-хости не оновляться.
 

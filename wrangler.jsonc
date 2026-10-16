@@ -30,9 +30,9 @@
       { "id": "catalog", "name": "Каталог вмілостей", "url": "https://catalog.rostyslav-mukha.dev/health", "kind": "health" },
       { "id": "docs", "name": "Документація", "url": "https://docs-projectk.rostyslav-mukha.dev/", "kind": "http" }
     ],
-    // Same Access team as the catalog; the AUD is the application guarding /admin and /v1/admin.
+    // Same Access team as the catalog, but its own application (own AUD) guarding /admin and /v1/admin.
     "ACCESS_TEAM_DOMAIN": "https://billowing-lake-958a.cloudflareaccess.com",
-    "ACCESS_AUD": "32f8259e640702a140a5617181a5ec8db20e0301e3571a20f2c2a584e40881b4",
+    "ACCESS_AUD": "d2be3ab942528af4a292924ed294bb91fd96a5c3c5361f6fce59b71d24b0c53b",
     "OWNER_EMAILS": "snowyfl1cker@gmail.com",
     // Where "the latest Lilejka" comes from for the ping reply.
     "RELEASES_REPO": "iamavasya/Project-K",
