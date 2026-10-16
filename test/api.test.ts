@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { dayOf, hourOf, probe, runChecks } from "../src/checks";
+import { check, dayOf, hourOf, probe, runChecks } from "../src/checks";
 import { housekeeping } from "../src/cron";
 import { MAX_NEW_INSTANCES_PER_DAY } from "../src/telemetry";
 import { call, json, mockFetch, OWNER, ping } from "./helpers";
@@ -51,6 +51,32 @@ describe("probe", () => {
       throw new TypeError("connection refused");
     });
     expect(await probe(web, limits)).toMatchObject({ state: "down", latencyMs: null, detail: "помилка мережі" });
+  });
+});
+
+describe("check", () => {
+  const fast = { slowMs: 30, timeoutMs: 10000 };
+  const web = { id: "web", name: "Веб", url: "https://web.test/", kind: "http" as const };
+  const delayed = (ms: number) => new Promise<Response>((r) => setTimeout(() => r(new Response("ok")), ms));
+
+  it("retries a slow answer and keeps the faster one", async () => {
+    let calls = 0;
+    mockFetch(() => (++calls === 1 ? delayed(80) : new Response("ok")));
+    expect(await check(web, fast, 0)).toMatchObject({ state: "up" });
+    expect(calls).toBe(2);
+  });
+
+  it("keeps the slow answer when the retry fails", async () => {
+    let calls = 0;
+    mockFetch(() => (++calls === 1 ? delayed(80) : new Response("", { status: 503 })));
+    expect(await check(web, fast, 0)).toMatchObject({ state: "degraded" });
+  });
+
+  it("does not retry an answer that was fine", async () => {
+    let calls = 0;
+    mockFetch(() => (++calls, new Response("ok")));
+    expect(await check(web, fast, 0)).toMatchObject({ state: "up" });
+    expect(calls).toBe(1);
   });
 });
 

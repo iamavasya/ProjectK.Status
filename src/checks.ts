@@ -80,12 +80,20 @@ export async function probe(target: Target, limits: Thresholds, now: () => numbe
   return result("up", latency, null, version);
 }
 
-/** One retry after a short pause, so a single dropped connection does not paint the day. */
+const rank: Record<State, number> = { up: 0, degraded: 1, down: 2 };
+
+/**
+ * One retry after a short pause, keeping the better answer, so a single dropped connection does not
+ * paint the day. A slow answer is retried too: the cron runs in whatever colo is idle, and its first
+ * request opens a new connection to the origin from there — 4–7 s while the API itself spent under
+ * 20 ms on it (App Insights, 16.10.2026).
+ */
 export async function check(target: Target, limits: Thresholds, pauseMs = 2000): Promise<CheckResult> {
   const first = await probe(target, limits);
-  if (first.state !== "down") return first;
+  if (first.state === "up") return first;
   await new Promise((r) => setTimeout(r, pauseMs));
-  return probe(target, limits);
+  const second = await probe(target, limits);
+  return rank[second.state] <= rank[first.state] ? second : first;
 }
 
 export const hourOf = (ms: number) => Math.floor(ms / 3_600_000);
