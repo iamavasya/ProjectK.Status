@@ -31,9 +31,9 @@ function showError(e) {
   box.hidden = !e;
 }
 
-/** "v1.10.2" > "v1.9.0"; null when either is not a plain release. */
+/** "v1.10.2" > "v1.9.0", "1.2" = "v1.2.0"; false when either is not a plain release. */
 function older(version, latest) {
-  const parse = (v) => /^v?(\d+)\.(\d+)\.(\d+)$/.exec(v ?? "")?.slice(1).map(Number);
+  const parse = (v) => /^v?(\d+)\.(\d+)(?:\.(\d+))?$/.exec(v ?? "")?.slice(1).map((n) => Number(n ?? 0));
   const a = parse(version);
   const b = parse(latest);
   if (!a || !b) return false;

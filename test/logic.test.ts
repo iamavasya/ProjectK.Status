@@ -15,6 +15,7 @@ describe("barState", () => {
 
 describe("compareVersions", () => {
   it("sorts by number, not by text", () => expect(["v1.9.0", "v1.10.2", "v1.1.9"].sort(compareVersions)).toEqual(["v1.1.9", "v1.9.0", "v1.10.2"]));
+  it("reads a missing patch as 0", () => expect(compareVersions("v1.2", "v1.1.9")).toBeGreaterThan(0));
   it("puts odd tags below releases", () => expect(compareVersions("nightly", "v0.0.1")).toBeLessThan(0));
 });
 

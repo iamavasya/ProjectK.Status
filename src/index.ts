@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { authenticate } from "./auth";
 import { runChecks } from "./checks";
-import { runCron } from "./cron";
+import { refreshLatestVersion, runCron } from "./cron";
 import { type Env, num } from "./env";
 import { buildStatus, type IncidentRow, toIncident } from "./status";
 import { MAX_PING_BYTES, parsePing, recordPing, telemetrySummary } from "./telemetry";
@@ -79,9 +79,9 @@ app.delete("/v1/admin/instances/:id", async (c) => {
   return c.body(null, 204);
 });
 
-/** Runs the checks right away, e.g. after a deploy, instead of waiting for the next tick. */
+/** Runs the checks and re-reads the latest release right away, e.g. after a deploy, instead of waiting for the next tick. */
 app.post("/v1/admin/check", async (c) => {
-  const results = await runChecks(c.env, Date.now());
+  const [results] = await Promise.all([runChecks(c.env, Date.now()), refreshLatestVersion(c.env)]);
   await caches.default.delete(statusCacheKey(c));
   return c.json({ results });
 });

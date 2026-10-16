@@ -2,7 +2,7 @@
 
 import { dayOf, hourOf, runChecks } from "./checks";
 import type { Env } from "./env";
-import { alertSilent, latestVersion } from "./telemetry";
+import { alertSilent } from "./telemetry";
 
 const DAY = 86_400_000;
 
@@ -14,8 +14,8 @@ export const isDailyTick = (at: number) => {
 export async function runCron(env: Env, at: number): Promise<void> {
   await runChecks(env, at);
   if (isDailyTick(at)) await housekeeping(env, at);
-  // Right after the first deploy there is no known release yet; ask GitHub hourly until there is.
-  else if (new Date(at).getUTCMinutes() < 2 && (await latestVersion(env)) === null) await refreshLatestVersion(env);
+  // A release should show up within the hour, not on the next daily tick. 24 GitHub calls a day.
+  else if (new Date(at).getUTCMinutes() < 2) await refreshLatestVersion(env);
 }
 
 export async function housekeeping(env: Env, at: number): Promise<void> {
@@ -30,9 +30,9 @@ export async function housekeeping(env: Env, at: number): Promise<void> {
   await alertSilent(env, at);
 }
 
-/** "v1.10.2" > "v1.9.0"; anything that is not a plain release sorts below. */
+/** "v1.10.2" > "v1.9.0", "v1.2" = "v1.2.0"; anything that is not a plain release sorts below. */
 export function compareVersions(a: string, b: string): number {
-  const parse = (v: string) => (/^v?(\d+)\.(\d+)\.(\d+)$/.exec(v)?.slice(1).map(Number) ?? null);
+  const parse = (v: string) => (/^v?(\d+)\.(\d+)(?:\.(\d+))?$/.exec(v)?.slice(1).map((n) => Number(n ?? 0)) ?? null);
   const x = parse(a);
   const y = parse(b);
   if (!x || !y) return x ? 1 : y ? -1 : 0;
@@ -40,7 +40,7 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** The newest release on GitHub, or the highest plain vX.Y.Z tag when the repo has no releases. */
+/** The newest release on GitHub, or the highest plain vX.Y[.Z] tag when the repo has no releases. */
 export async function refreshLatestVersion(env: Env): Promise<string | null> {
   if (!env.RELEASES_REPO) return null;
   const get = (path: string) =>
@@ -54,7 +54,7 @@ export async function refreshLatestVersion(env: Env): Promise<string | null> {
     if (!latest) {
       const tags = await get("/tags?per_page=100");
       if (tags.ok) {
-        const names = ((await tags.json()) as { name: string }[]).map((t) => t.name).filter((n) => /^v?\d+\.\d+\.\d+$/.test(n));
+        const names = ((await tags.json()) as { name: string }[]).map((t) => t.name).filter((n) => /^v?\d+\.\d+(\.\d+)?$/.test(n));
         names.sort(compareVersions);
         latest = names.at(-1) ?? null;
       }
