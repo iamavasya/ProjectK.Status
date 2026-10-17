@@ -55,7 +55,7 @@ export async function probe(target: Target, limits: Thresholds, now: () => numbe
   let res: Response;
   try {
     res = await fetch(target.url, {
-      headers: { "User-Agent": "projectk-status/1 (+https://status.rostyslav-mukha.dev)", Accept: "application/json, text/html;q=0.9" },
+      headers: { "User-Agent": "projectk-status/1 (+https://status.lileyka.app)", Accept: "application/json, text/html;q=0.9" },
       redirect: "follow",
       signal: AbortSignal.timeout(limits.timeoutMs),
       cache: "no-store",

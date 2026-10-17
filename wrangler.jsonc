@@ -29,10 +29,10 @@
     // What the cron checks. kind "health" reads Lilejka's /health JSON (status + version);
     // "http" only needs a 2xx. Ids are stored in D1, so renaming one starts a new history.
     "TARGETS": [
-      { "id": "api", "name": "API", "url": "https://api-projectk.rostyslav-mukha.dev/health", "kind": "health" },
-      { "id": "web", "name": "Вебзастосунок", "url": "https://projectk.rostyslav-mukha.dev/", "kind": "http" },
-      { "id": "catalog", "name": "Каталог вмілостей", "url": "https://catalog.rostyslav-mukha.dev/health", "kind": "health" },
-      { "id": "docs", "name": "Документація", "url": "https://docs-projectk.rostyslav-mukha.dev/", "kind": "http" }
+      { "id": "api", "name": "API", "url": "https://api.lileyka.app/health", "kind": "health" },
+      { "id": "web", "name": "Вебзастосунок", "url": "https://lileyka.app/", "kind": "http" },
+      { "id": "catalog", "name": "Каталог вмілостей", "url": "https://catalog.lileyka.app/health", "kind": "health" },
+      { "id": "docs", "name": "Документація", "url": "https://docs.lileyka.app/", "kind": "http" }
     ],
     // Same Access team as the catalog, but its own application (own AUD) guarding /admin and /v1/admin.
     "ACCESS_TEAM_DOMAIN": "https://billowing-lake-958a.cloudflareaccess.com",
@@ -44,6 +44,10 @@
     "TELEGRAM_CHAT_ID": ""
   },
   // Cache API only works on a custom domain, not on *.workers.dev.
-  "routes": [{ "pattern": "status.rostyslav-mukha.dev", "custom_domain": true }],
+  // The old host stays: self-host installs already in the field ping it.
+  "routes": [
+    { "pattern": "status.lileyka.app", "custom_domain": true },
+    { "pattern": "status.rostyslav-mukha.dev", "custom_domain": true }
+  ],
   "observability": { "enabled": true }
 }
