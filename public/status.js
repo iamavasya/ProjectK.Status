@@ -13,6 +13,7 @@ const KIND_TEXT = { incident: "Збій", maintenance: "Планові робо�
 const time = new Intl.DateTimeFormat("uk", { hour: "2-digit", minute: "2-digit" });
 const dateTime = new Intl.DateTimeFormat("uk", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const date = new Intl.DateTimeFormat("uk", { day: "numeric", month: "long", timeZone: "UTC" });
+const ms = (x) => `${x.toLocaleString("uk")} мс`;
 const percent = (x) => (x === null ? "—" : `${(Math.floor(x * 10000) / 100).toLocaleString("uk")} %`);
 
 function el(tag, props = {}, ...children) {
@@ -26,21 +27,42 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
-function dayCaption(name, bar) {
+// A target whose /health reports the API's own time is drawn by that time: the probe's round trip
+// is mostly the network from whichever Cloudflare colo ran the cron, not the API.
+const reportsServerTime = (t) => t.serverMs !== null || t.hours.some((h) => h.serverMs !== null) || t.days.some((d) => d.serverMs !== null);
+
+function dayCaption(bar, server) {
   const day = date.format(new Date(`${bar.day}T00:00:00Z`));
   if (bar.state === "none") return `${day}: даних немає`;
   const parts = [`${day}: ${STATE_TEXT[bar.state].toLowerCase()}`, `доступність ${percent(bar.uptime)}`];
-  if (bar.avgMs !== null) parts.push(`відповідь у середньому ${bar.avgMs} мс`);
+  if (server && bar.serverMs !== null) parts.push(`обробка в API у середньому ${ms(bar.serverMs)}`);
+  else if (!server && bar.avgMs !== null) parts.push(`відповідь у середньому ${ms(bar.avgMs)}`);
   return parts.join(", ");
 }
 
+function hourTitle(h, server) {
+  const at = time.format(h.at);
+  if (h.state === "none") return `${at}: даних немає`;
+  if (server) return `${at}: ${h.serverMs !== null ? `обробка в API ${ms(h.serverMs)}` : "запитів не було"}`;
+  return `${at}: ${h.avgMs !== null ? ms(h.avgMs) : "немає відповіді"}`;
+}
+
+function nowText(t, server) {
+  if (t.state === "none") return "";
+  const value = server
+    ? t.serverMs !== null ? `обробка в API ${ms(t.serverMs)}` : "запитів за 15 хв не було"
+    : t.latencyMs !== null ? ms(t.latencyMs) : "немає відповіді";
+  return `Зараз: ${value}${t.detail ? `, ${t.detail}` : ""}${t.since ? `. Так з ${dateTime.format(t.since)}` : ""}`;
+}
+
 function renderTarget(t) {
+  const server = reportsServerTime(t);
   const caption = el("p", { class: "caption" });
-  const resting = t.state === "none" ? "" : `Зараз: ${t.latencyMs !== null ? `${t.latencyMs} мс` : "немає відповіді"}${t.detail ? `, ${t.detail}` : ""}${t.since ? `. Так з ${dateTime.format(t.since)}` : ""}`;
+  const resting = nowText(t, server);
   caption.textContent = resting;
 
   const bars = el("div", { class: "bars", role: "img", "aria-label": `${t.name}: 90 днів, доступність ${percent(t.uptime)}` });
-  for (const bar of t.days) bars.append(el("span", { state: bar.state, title: dayCaption(t.name, bar) }));
+  for (const bar of t.days) bars.append(el("span", { state: bar.state, title: dayCaption(bar, server) }));
   const show = (event) => {
     const span = event.target.closest(".bars span");
     if (!span) return;
@@ -55,11 +77,16 @@ function renderTarget(t) {
     caption.textContent = resting;
   });
 
-  const max = Math.max(1, ...t.hours.map((h) => h.avgMs ?? 0));
-  const hours = el("div", { class: "hours", role: "img", "aria-label": `${t.name}: середній час відповіді за 24 години` });
+  const value = (h) => (server ? h.serverMs : h.avgMs) ?? 0;
+  const hoursText = server ? "Обробка в API за 24 години" : "Відповідь за 24 години";
+  const max = Math.max(1, ...t.hours.map(value));
+  const hours = el("div", { class: "hours", role: "img", "aria-label": `${t.name}: ${hoursText.toLowerCase()}` });
   for (const h of t.hours) {
-    const span = el("span", { state: h.state, title: `${time.format(h.at)}: ${h.avgMs !== null ? `${h.avgMs} мс` : "немає відповіді"}` });
-    span.style.height = `${Math.max(8, Math.round(((h.avgMs ?? 0) / max) * 100))}%`;
+    // An hour with no requests is grey, not a short green bar that reads as a fast API; an outage
+    // in it keeps its colour.
+    const idle = server && h.serverMs === null && h.state === "up";
+    const span = el("span", { state: idle ? "none" : h.state, title: hourTitle(h, server) });
+    span.style.height = `${Math.max(8, Math.round((value(h) / max) * 100))}%`;
     hours.append(span);
   }
 
@@ -85,7 +112,7 @@ function renderTarget(t) {
     ),
     caption,
     hours,
-    el("div", { class: "hours-label" }, el("span", { text: "Відповідь за 24 години" }), el("span", { text: "зараз" })),
+    el("div", { class: "hours-label" }, el("span", { text: hoursText }), el("span", { text: "зараз" })),
   );
 }
 

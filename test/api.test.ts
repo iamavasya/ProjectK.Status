@@ -30,6 +30,14 @@ describe("probe", () => {
     expect(await probe(api, limits)).toMatchObject({ state: "up", version: "v1.2.0", detail: null });
   });
 
+  it("reads the API's own time from /health, and none when it reports none", async () => {
+    mockFetch(() => json({ status: "ready", api: { windowMinutes: 15, requests: 40, p50Ms: 12.4, p95Ms: 80 } }));
+    expect(await probe(api, limits)).toMatchObject({ state: "up", serverMs: 12.4 });
+    vi.restoreAllMocks();
+    mockFetch(() => json({ status: "ready", api: { windowMinutes: 15, requests: 0, p50Ms: null, p95Ms: null } }));
+    expect(await probe(api, limits)).toMatchObject({ state: "up", serverMs: null });
+  });
+
   it("is degraded when /health is not ready", async () => {
     mockFetch(() => json({ status: "starting" }));
     expect(await probe(api, limits)).toMatchObject({ state: "degraded", detail: "health: starting" });
@@ -85,7 +93,7 @@ describe("cron checks", () => {
     let apiUp = true;
     const sent = mockFetch((url) => {
       if (url.startsWith("https://api.telegram.org/")) return json({ ok: true });
-      if (url === "https://api.test/health") return apiUp ? json({ status: "ready", version: "v1.2.0" }) : new Response("", { status: 503 });
+      if (url === "https://api.test/health") return apiUp ? json({ status: "ready", version: "v1.2.0", api: { p50Ms: 20 } }) : new Response("", { status: 503 });
       return new Response("ok");
     });
     const at = Date.parse("2026-10-16T10:00:00Z");
@@ -101,7 +109,8 @@ describe("cron checks", () => {
     // The version of the last answer that carried one survives the outage.
     expect(state).toMatchObject({ state: "down", since: at + 120_000, version: "v1.2.0" });
     const day = await env.DB.prepare("SELECT * FROM target_days WHERE target = 'api' AND day = ?").bind(dayOf(at)).first();
-    expect(day).toMatchObject({ checks: 2, down: 1 });
+    // The server's time counts only for the check that carried one.
+    expect(day).toMatchObject({ checks: 2, down: 1, server_sum: 20, server_checks: 1 });
     const hour = await env.DB.prepare("SELECT * FROM target_hours WHERE target = 'web' AND hour = ?").bind(hourOf(at)).first();
     expect(hour).toMatchObject({ checks: 2, down: 0 });
 
@@ -117,10 +126,10 @@ describe("GET /v1/status", () => {
   it("lists every target with 90 day bars and 24 hour averages", async () => {
     const now = Date.now();
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO target_state VALUES ('api', 'up', ?1, ?1, 120, 'v1.2.0', NULL)").bind(now),
-      env.DB.prepare("INSERT INTO target_days VALUES ('api', ?, 720, 0, 8, 85000)").bind(dayOf(now - 86_400_000)),
-      env.DB.prepare("INSERT INTO target_days VALUES ('api', ?, 10, 0, 0, 1200)").bind(dayOf(now)),
-      env.DB.prepare("INSERT INTO target_hours VALUES ('api', ?, 10, 0, 0, 1200)").bind(hourOf(now)),
+      env.DB.prepare("INSERT INTO target_state (target, state, since, checked_at, latency_ms, version, detail, server_ms) VALUES ('api', 'up', ?1, ?1, 120, 'v1.2.0', NULL, 12.5)").bind(now),
+      env.DB.prepare("INSERT INTO target_days (target, day, checks, degraded, down, latency_sum) VALUES ('api', ?, 720, 0, 8, 85000)").bind(dayOf(now - 86_400_000)),
+      env.DB.prepare("INSERT INTO target_days (target, day, checks, degraded, down, latency_sum, server_sum, server_checks) VALUES ('api', ?, 10, 0, 0, 1200, 100, 8)").bind(dayOf(now)),
+      env.DB.prepare("INSERT INTO target_hours (target, hour, checks, degraded, down, latency_sum, server_sum, server_checks) VALUES ('api', ?, 10, 0, 0, 1200, 100, 8)").bind(hourOf(now)),
     ]);
     const res = await call("/v1/status");
     expect(res.status).toBe(200);
@@ -128,21 +137,21 @@ describe("GET /v1/status", () => {
     expect(status.overall).toBe("up");
     expect(status.targets.map((t: any) => t.id)).toEqual(["api", "web"]);
     const api = status.targets[0];
-    expect(api).toMatchObject({ state: "up", version: "v1.2.0", latencyMs: 120 });
+    expect(api).toMatchObject({ state: "up", version: "v1.2.0", latencyMs: 120, serverMs: 12.5 });
     expect(api.days).toHaveLength(90);
-    expect(api.days.at(-2)).toMatchObject({ state: "down", avgMs: 119 });
-    expect(api.days.at(-1)).toMatchObject({ state: "up", avgMs: 120 });
+    expect(api.days.at(-2)).toMatchObject({ state: "down", avgMs: 119, serverMs: null });
+    expect(api.days.at(-1)).toMatchObject({ state: "up", avgMs: 120, serverMs: 12.5 });
     expect(api.days[0].state).toBe("none");
     expect(api.uptime).toBeCloseTo(722 / 730);
     expect(api.hours).toHaveLength(24);
-    expect(api.hours.at(-1)).toMatchObject({ state: "up", avgMs: 120 });
+    expect(api.hours.at(-1)).toMatchObject({ state: "up", avgMs: 120, serverMs: 12.5 });
     expect(status.targets[1].state).toBe("none");
   });
 
   it("shows maintenance instead of an outage", async () => {
     const now = Date.now();
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO target_state VALUES ('api', 'down', ?1, ?1, NULL, NULL, 'HTTP 503')").bind(now),
+      env.DB.prepare("INSERT INTO target_state (target, state, since, checked_at, latency_ms, version, detail) VALUES ('api', 'down', ?1, ?1, NULL, NULL, 'HTTP 503')").bind(now),
       env.DB.prepare("INSERT INTO incidents (kind, title, targets, starts_at, created_by, updated_at) VALUES ('maintenance', 'Оновлення бази', 'api', ?1, 'x', ?1)").bind(now - 60_000),
     ]);
     const status = await body(await call("/v1/status"));

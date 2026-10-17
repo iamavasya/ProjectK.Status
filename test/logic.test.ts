@@ -26,7 +26,7 @@ describe("isDailyTick", () => {
 
 describe("alertText", () => {
   const target: Target = { id: "api", name: "API", url: "https://api.test/health", kind: "health" };
-  const r = (state: "up" | "degraded" | "down") => ({ target: "api", state, latencyMs: state === "down" ? null : 120, version: null, detail: state === "down" ? "HTTP 503" : null });
+  const r = (state: "up" | "degraded" | "down") => ({ target: "api", state, latencyMs: state === "down" ? null : 120, serverMs: null, version: null, detail: state === "down" ? "HTTP 503" : null });
   it("stays quiet on the first check", () => expect(alertText(target, r("down"), undefined)).toBeNull());
   it("alerts when a target falls", () => expect(alertText(target, r("down"), "up")).toContain("HTTP 503"));
   it("alerts when it comes back", () => expect(alertText(target, r("up"), "down")).toContain("знову відповідає"));

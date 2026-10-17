@@ -17,8 +17,10 @@ export interface Target {
 export interface CheckResult {
   target: string;
   state: State;
-  /** Null when nothing answered. */
+  /** The probe's round trip, network included. Null when nothing answered. */
   latencyMs: number | null;
+  /** The API's own median time on real requests, from /health; null when it reports none. */
+  serverMs: number | null;
   version: string | null;
   detail: string | null;
 }
@@ -40,10 +42,11 @@ function describe(body: { status?: unknown } | null): string {
 
 export async function probe(target: Target, limits: Thresholds, now: () => number = Date.now): Promise<CheckResult> {
   const started = now();
-  const result = (state: State, latencyMs: number | null, detail: string | null, version: string | null = null): CheckResult => ({
+  const result = (state: State, latencyMs: number | null, detail: string | null, version: string | null = null, serverMs: number | null = null): CheckResult => ({
     target: target.id,
     state,
     latencyMs,
+    serverMs,
     version,
     detail,
   });
@@ -68,16 +71,18 @@ export async function probe(target: Target, limits: Thresholds, now: () => numbe
   }
 
   let version: string | null = null;
+  let serverMs: number | null = null;
   if (target.kind === "health") {
-    const body = (await res.json().catch(() => null)) as { status?: unknown; version?: unknown } | null;
+    const body = (await res.json().catch(() => null)) as { status?: unknown; version?: unknown; api?: { p50Ms?: unknown } } | null;
     version = typeof body?.version === "string" ? body.version.slice(0, 40) : null;
-    if (body?.status !== "ready") return result("degraded", latency, `health: ${describe(body)}`.slice(0, 120), version);
+    serverMs = typeof body?.api?.p50Ms === "number" && Number.isFinite(body.api.p50Ms) && body.api.p50Ms >= 0 ? body.api.p50Ms : null;
+    if (body?.status !== "ready") return result("degraded", latency, `health: ${describe(body)}`.slice(0, 120), version, serverMs);
   } else {
     await res.body?.cancel();
   }
 
-  if (latency > limits.slowMs) return result("degraded", latency, `повільно: ${latency} мс`, version);
-  return result("up", latency, null, version);
+  if (latency > limits.slowMs) return result("degraded", latency, `повільно: ${latency} мс`, version, serverMs);
+  return result("up", latency, null, version, serverMs);
 }
 
 const rank: Record<State, number> = { up: 0, degraded: 1, down: 2 };
@@ -109,24 +114,28 @@ export function recordStatements(db: D1Database, r: CheckResult, at: number, pre
   const down = r.state === "down" ? 1 : 0;
   // Latency counts only when something answered; the average divides by checks − down.
   const latency = r.state === "down" ? 0 : (r.latencyMs ?? 0);
+  // The server's time counts only when /health reported one; the average divides by server_checks.
+  const server = r.serverMs ?? 0;
+  const serverChecks = r.serverMs === null ? 0 : 1;
   const counters = (table: "target_hours" | "target_days", key: "hour" | "day", value: number | string) =>
     db
       .prepare(
-        `INSERT INTO ${table} (target, ${key}, checks, degraded, down, latency_sum) VALUES (?1, ?2, 1, ?3, ?4, ?5)
-         ON CONFLICT (target, ${key}) DO UPDATE SET checks = checks + 1, degraded = degraded + ?3, down = down + ?4, latency_sum = latency_sum + ?5`,
+        `INSERT INTO ${table} (target, ${key}, checks, degraded, down, latency_sum, server_sum, server_checks) VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT (target, ${key}) DO UPDATE SET checks = checks + 1, degraded = degraded + ?3, down = down + ?4, latency_sum = latency_sum + ?5,
+           server_sum = server_sum + ?6, server_checks = server_checks + ?7`,
       )
-      .bind(r.target, value, degraded, down, latency);
+      .bind(r.target, value, degraded, down, latency, server, serverChecks);
 
   const statements = [
     db
       .prepare(
-        `INSERT INTO target_state (target, state, since, checked_at, latency_ms, version, detail) VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6)
+        `INSERT INTO target_state (target, state, since, checked_at, latency_ms, version, detail, server_ms) VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT (target) DO UPDATE SET
            since = CASE WHEN target_state.state = excluded.state THEN target_state.since ELSE excluded.since END,
            state = excluded.state, checked_at = excluded.checked_at, latency_ms = excluded.latency_ms,
-           version = COALESCE(excluded.version, target_state.version), detail = excluded.detail`,
+           version = COALESCE(excluded.version, target_state.version), detail = excluded.detail, server_ms = excluded.server_ms`,
       )
-      .bind(r.target, r.state, at, r.latencyMs, r.version, r.detail),
+      .bind(r.target, r.state, at, r.latencyMs, r.version, r.detail, r.serverMs),
     counters("target_hours", "hour", hourOf(at)),
     counters("target_days", "day", dayOf(at)),
   ];

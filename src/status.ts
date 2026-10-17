@@ -16,6 +16,8 @@ export function barState(checks: number, degraded: number, down: number): BarSta
 }
 
 const avg = (sum: number, checks: number, down: number) => (checks - down > 0 ? Math.round(sum / (checks - down)) : null);
+/** The API's own median, averaged over the checks that carried one; a tenth of a millisecond is enough. */
+const serverAvg = (c: Counter) => (c.server_checks > 0 ? Math.round((c.server_sum / c.server_checks) * 10) / 10 : null);
 
 interface Counter {
   target: string;
@@ -23,6 +25,8 @@ interface Counter {
   degraded: number;
   down: number;
   latency_sum: number;
+  server_sum: number;
+  server_checks: number;
 }
 
 export interface Incident {
@@ -68,15 +72,15 @@ export async function buildStatus(env: Env, now: number) {
   const since = now - HISTORY_DAYS * 86_400_000;
 
   const [states, days, hours, incidents, events] = await env.DB.batch([
-    env.DB.prepare("SELECT target, state, since, checked_at, latency_ms, version, detail FROM target_state"),
-    env.DB.prepare("SELECT target, day, checks, degraded, down, latency_sum FROM target_days WHERE day >= ?").bind(firstDay),
-    env.DB.prepare("SELECT target, hour, checks, degraded, down, latency_sum FROM target_hours WHERE hour >= ?").bind(firstHour),
+    env.DB.prepare("SELECT target, state, since, checked_at, latency_ms, server_ms, version, detail FROM target_state"),
+    env.DB.prepare("SELECT target, day, checks, degraded, down, latency_sum, server_sum, server_checks FROM target_days WHERE day >= ?").bind(firstDay),
+    env.DB.prepare("SELECT target, hour, checks, degraded, down, latency_sum, server_sum, server_checks FROM target_hours WHERE hour >= ?").bind(firstHour),
     // Open ones, upcoming maintenance, and whatever was resolved inside the history window.
     env.DB.prepare("SELECT * FROM incidents WHERE resolved_at IS NULL OR resolved_at >= ? ORDER BY starts_at DESC LIMIT 50").bind(since),
     env.DB.prepare("SELECT target, at, state, previous, detail FROM target_events WHERE at >= ? ORDER BY at DESC LIMIT 50").bind(since),
   ]);
 
-  type StateRow = { target: string; state: State; since: number; checked_at: number; latency_ms: number | null; version: string | null; detail: string | null };
+  type StateRow = { target: string; state: State; since: number; checked_at: number; latency_ms: number | null; server_ms: number | null; version: string | null; detail: string | null };
   const stateBy = new Map((states.results as StateRow[]).map((r) => [r.target, r]));
   const dayBy = new Map((days.results as (Counter & { day: string })[]).map((r) => [`${r.target}|${r.day}`, r]));
   const hourBy = new Map((hours.results as (Counter & { hour: number })[]).map((r) => [`${r.target}|${r.hour}`, r]));
@@ -92,16 +96,16 @@ export async function buildStatus(env: Env, now: number) {
     let down = 0;
     const bars = dayList.map((day) => {
       const c = dayBy.get(`${t.id}|${day}`);
-      if (!c) return { day, state: "none" as BarState, uptime: null, avgMs: null };
+      if (!c) return { day, state: "none" as BarState, uptime: null, avgMs: null, serverMs: null };
       checks += c.checks;
       down += c.down;
-      return { day, state: barState(c.checks, c.degraded, c.down), uptime: (c.checks - c.down) / c.checks, avgMs: avg(c.latency_sum, c.checks, c.down) };
+      return { day, state: barState(c.checks, c.degraded, c.down), uptime: (c.checks - c.down) / c.checks, avgMs: avg(c.latency_sum, c.checks, c.down), serverMs: serverAvg(c) };
     });
     const hourly = hourList.map((hour) => {
       const c = hourBy.get(`${t.id}|${hour}`);
       return c
-        ? { at: hour * 3_600_000, state: barState(c.checks, c.degraded, c.down), avgMs: avg(c.latency_sum, c.checks, c.down) }
-        : { at: hour * 3_600_000, state: "none" as BarState, avgMs: null };
+        ? { at: hour * 3_600_000, state: barState(c.checks, c.degraded, c.down), avgMs: avg(c.latency_sum, c.checks, c.down), serverMs: serverAvg(c) }
+        : { at: hour * 3_600_000, state: "none" as BarState, avgMs: null, serverMs: null };
     });
     const inMaintenance = maintenanceNow.some((m) => m.targets.length === 0 || m.targets.includes(t.id));
     return {
@@ -112,6 +116,7 @@ export async function buildStatus(env: Env, now: number) {
       since: s?.since ?? null,
       checkedAt: s?.checked_at ?? null,
       latencyMs: s?.latency_ms ?? null,
+      serverMs: s?.server_ms ?? null,
       version: s?.version ?? null,
       detail: s?.detail ?? null,
       uptime: checks > 0 ? (checks - down) / checks : null,
