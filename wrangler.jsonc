@@ -39,7 +39,7 @@
     "ACCESS_AUD": "d2be3ab942528af4a292924ed294bb91fd96a5c3c5361f6fce59b71d24b0c53b",
     "OWNER_EMAILS": "snowyfl1cker@gmail.com",
     // Where "the latest Lilejka" comes from for the ping reply.
-    "RELEASES_REPO": "iamavasya/Project-K",
+    "RELEASES_REPO": "lileyka-app/Project-K",
     // Alerts go here when TELEGRAM_BOT_TOKEN is set (`wrangler secret put TELEGRAM_BOT_TOKEN`).
     "TELEGRAM_CHAT_ID": ""
   },
