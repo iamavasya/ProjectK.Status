@@ -2,6 +2,7 @@
 // the current-state row plus the hour and day counters.
 
 import { type Env, num } from "./env";
+import { probeFromEurope } from "./prober";
 import { notify } from "./telegram";
 
 export type State = "up" | "degraded" | "down";
@@ -155,6 +156,11 @@ export function alertText(target: Target, r: CheckResult, previous: State | unde
   return null;
 }
 
+/** Every target at once, each with its retry. */
+export function probeAll(targets: Target[], limits: Thresholds, pauseMs: number): Promise<CheckResult[]> {
+  return Promise.all(targets.map((t) => check(t, limits, pauseMs)));
+}
+
 export async function runChecks(env: Env, at: number, pauseMs = 2000): Promise<CheckResult[]> {
   const targets = env.TARGETS ?? [];
   if (targets.length === 0) return [];
@@ -162,7 +168,7 @@ export async function runChecks(env: Env, at: number, pauseMs = 2000): Promise<C
   const { results: rows } = await env.DB.prepare("SELECT target, state FROM target_state").all<StateRow>();
   const previous = new Map(rows.map((row) => [row.target, row.state]));
 
-  const results = await Promise.all(targets.map((t) => check(t, limits, pauseMs)));
+  const results = await probeFromEurope(env, targets, limits, pauseMs);
   await env.DB.batch(results.flatMap((r) => recordStatements(env.DB, r, at, previous.get(r.target))));
 
   const alerts = targets.map((t, i) => alertText(t, results[i], previous.get(t.id))).filter((t): t is string => t !== null);

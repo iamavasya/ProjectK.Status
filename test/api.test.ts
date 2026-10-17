@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env, listDurableObjectIds } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { check, dayOf, hourOf, probe, runChecks } from "../src/checks";
 import { housekeeping } from "../src/cron";
@@ -85,6 +85,21 @@ describe("check", () => {
     mockFetch(() => (++calls, new Response("ok")));
     expect(await check(web, fast, 0)).toMatchObject({ state: "up" });
     expect(calls).toBe(1);
+  });
+});
+
+describe("prober", () => {
+  it("runs the checks in the one object pinned near Europe, not in the cron's colo", async () => {
+    let errors = 0;
+    vi.spyOn(console, "error").mockImplementation(() => void errors++);
+    mockFetch(() => json({ status: "ready", version: "v1.2.0" }));
+
+    const results = await runChecks(env, Date.parse("2026-10-17T18:00:00Z"), 0);
+
+    expect(results.map((r) => r.state)).toEqual(["up", "up"]);
+    expect(await listDurableObjectIds(env.PROBER!)).toHaveLength(1);
+    // A fallback to probing from the cron's colo logs; none happened.
+    expect(errors).toBe(0);
   });
 });
 

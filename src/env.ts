@@ -1,8 +1,11 @@
 import type { Target } from "./checks";
+import type { Prober } from "./prober";
 
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  /** Where the checks run from; see prober.ts. Absent, they run from the cron's own colo. */
+  PROBER?: DurableObjectNamespace<Prober>;
 
   /** What the cron checks, in page order. */
   TARGETS: Target[];

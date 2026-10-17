@@ -157,6 +157,8 @@ app.delete("/v1/admin/incidents/:id", async (c) => {
 
 app.notFound((c) => error(c, 404, "не знайдено"));
 
+export { Prober } from "./prober";
+
 export default {
   fetch: app.fetch,
   scheduled(event, env, ctx) {

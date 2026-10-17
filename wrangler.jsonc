@@ -21,6 +21,10 @@
   // One trigger of the five a Free account has. Every 2 minutes keeps D1 writes near 9k a day
   // for four targets; the daily housekeeping runs on the 03:00 UTC tick.
   "triggers": { "crons": ["*/2 * * * *"] },
+  // The checks run in this object, pinned near Eastern Europe (src/prober.ts). SQLite-backed: the
+  // only kind the Free plan allows; it stores nothing.
+  "durable_objects": { "bindings": [{ "name": "PROBER", "class_name": "Prober" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Prober"] }],
   "vars": {
     // What the cron checks. kind "health" reads Lilejka's /health JSON (status + version);
     // "http" only needs a 2xx. Ids are stored in D1, so renaming one starts a new history.
